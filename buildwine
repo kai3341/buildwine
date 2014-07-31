@@ -1,0 +1,110 @@
+#!/bin/bash
+
+#ENVPATH="/home/kai/dev/wine"	#FIXME
+
+if [ -z "$ENVPATH" ]; then ENVPATH="/var/i386-enviroment"; fi	#default
+if [ -z "$BUILDPATH" ]; then BUILDPATH="/tmp/build/wine/"; fi	#default
+
+#---
+
+function InstallPackage {
+	if [ -n "$(which dpkg)" ];then InstallPackageDebian;fi
+}
+
+function InstallPackageDebian {
+	if [ 'x86' == "$(uname -m)" ]
+	then
+		PACKAGE="$(find "$BUILDPATH" -iname '*.deb')"
+	else
+		PACKAGE="$(find "$ENVPATH""$BUILDPATH" -iname '*.deb')"
+	fi
+	if [ -n "$PACKAGE" ]
+	then
+		dpkg -i "$PACKAGE"
+	else
+		echo 'Error: package not found. Exiting...'
+	fi
+}
+
+function RuntimeDependencies {
+	if [ -n "$(which dpkg)" ];then RuntimeDependenciesDebian;fi
+}
+
+function RuntimeDependenciesDebian {
+	DEPLIST="libosmesa6 liblcms2-2 libgstreamer-plugins-base0.10-0"
+	DEPLISTi386=''
+	for pkg in $DEPLIST
+	do
+		DEPLISTi386="$DEPLISTi386"" ""$pkg"":i386"
+	done
+	if [ -n "$(which aptitude)" ]
+	then
+		aptitude install $DEPLISTi386 -y
+	elif [ -n "$(which apt-get)" ]
+	then
+		apt-get install $DEPLISTi386 -y
+	else
+		echo "At 01.08.2014 there was no apt in Debian. Sorry."
+		exit 1
+	fi
+}
+
+function SystemUpdate {
+	if [ -n "$(which dpkg)" ];then SystemUpdateDebian;fi
+}
+
+function SystemUpdateDebian {
+	if [ -n "$(which aptitude)" ]
+	then
+		aptitude update && aptitude upgrade -y
+	elif [ -n "$(which apt-get)" ]
+	then
+		apt-get update && apt-get upgrade -y
+	fi
+}
+
+function PrepareChrootEnviroment {
+	if ! [ -d "$ENVPATH""/bin" ]; then CreateChrootEnviroment; fi
+	cp "$(which buildwine-native)" "$ENVPATH""/usr/bin/"	#Update everywhere!
+	for dir in dev proc sys
+	do
+		mount -o bind "/""$dir" "$ENVPATH""/""$dir"
+	done
+}
+
+function CreateChrootEnviroment {
+	mkdir -p "$ENVPATH"
+	if [ -n "$(which dpkg)" ];then CreateChrootEnviromentDebian;fi
+}
+
+function CreateChrootEnviromentDebian {
+	SUITE="$(lsb_release -sc)"
+	SOURSESLIST="$(cat /etc/apt/sources.list|grep -v ^\#|grep .)"
+	MIRRORS="$(echo $SOURSESLIST|awk '{printf $2"\n"}'|uniq)"
+	MIRROR1="$(echo $MIRRORS|head -n1)"	#FIXME
+	debootstrap --arch i386 "$SUITE" "$ENVPATH" "$MIRROR1"
+	if ! [ -d "$ENVPATH""/bin" ]
+	then
+		echo 'Error: debootstrap fail. Exiting...'
+		exit 1
+	fi
+	echo "$SOURSESLIST" > "$ENVPATH""/etc/apt/sources.list"
+	cp "$(which buildwine-native)" "$ENVPATH""/usr/bin/"
+}
+
+#---
+
+if ! [ 'x86' == "$(uname -m)" ]
+then
+	PrepareChrootEnviroment
+	chroot "$ENVPATH" "/bin/bash" -c "buildwine-native"
+	SystemUpdate
+	RuntimeDependencies
+	for dir in dev proc sys
+	do
+		umount "$ENVPATH""/""$dir"
+	done
+else
+	buildwine-native
+fi
+InstallPackage
