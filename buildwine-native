@@ -1,0 +1,87 @@
+#!/bin/bash
+
+#BUILDPATH='/tmp/build'	#FIXME
+
+if [ -z "$BUILDPATH" ]; then BUILDPATH="/tmp/build/wine/"; fi	#default
+
+#---
+
+function Build {	#FIXME
+THREADCOUNT="$(lscpu|grep ^'CPU(s)'|awk '{printf $2"\n"}')"
+if [ -z "$THREADCOUNT" ];then THREADCOUNT=1;fi
+./configure
+make -j "$THREADCOUNT"
+checkinstall --install=no -y
+}
+
+function BuildDependencies {
+	if [ -n "$(which dpkg)" ];then BuildDependenciesDebian;fi
+}
+
+function BuildDependenciesDebian {
+	VGACART="$(lspci|grep VGA)"
+	if [ -n "$(echo VGACART|grep -i intel)" ]
+	then
+		OPENCLPKG="ocl-icd-libopencl1 ocl-icd-opencl-dev ocl-icd-dev"
+	elif [ -n "$(echo VGACART|grep -i amd)" ]
+	then
+		OPENCLPKG="amd-opencl-icd amd-opencl-dev ocl-icd-dev"
+	elif [ -n "$(echo VGACART|grep -i nvidia)" ]
+	then
+		OPENCLPKG="nvidia-libopencl1 nvidia-opencl-dev ocl-icd-dev"
+	fi
+	apt-get install wget bzip2 gzip checkinstall pciutils -y
+	DEPDEVLIST="libosmesa6-dev liblcms2-dev libgstreamer-plugins-base0.10-dev libhal-dev"
+	apt-get build-dep wine -y
+	if [ -n "$(which aptitude)" ]
+	then
+		aptitude install $OPENCLPKG $DEPDEVLIST -y
+	elif [ -n "$(which apt-get)" ]
+	then
+		apt-get install $OPENCLPKG $DEPDEVLIST -y
+	fi
+}
+
+function SystemUpdate {
+	if [ -n "$(which dpkg)" ];then SystemUpdateDebian;fi
+}
+
+function SystemUpdateDebian {
+	if [ -n "$(which aptitude)" ]
+	then
+		aptitude update && aptitude upgrade -y
+	elif [ -n "$(which apt-get)" ]
+	then
+		apt-get update && apt-get upgrade -y
+	else
+		echo "At 01.08.2014 there was no apt in Debian. Sorry."
+		exit 1
+	fi
+}
+
+function PrepareToBuild {	#FIXME
+	mkdir -p "$BUILDPATH"
+	cd "$BUILDPATH"
+#	rm -rf ./*	#FIXME
+	wget "$ARCHIVELINK"
+	tar xvf "$ARCHNAME"
+	cd "$(dirname "$(find . -iname 'configure')")"
+}
+
+#---
+
+mkdir -p "$BUILDPATH"
+#WINEPAGE="$(wget -qO- http://www.winehq.org/)"
+
+#if [ -z "$WINEPAGE" ]
+#then
+#	echo 'Error: winehq.org unavailable. Exiting...'
+#	exit 1
+#fi
+
+ARCHIVELINK="$(wget -qO- http://www.winehq.org/|grep '<p>The source is <a href='|head -n1|sed 's/^.*http:/http:/g;s/">.*//g')" #'
+ARCHNAME="$(basename $ARCHIVELINK)"
+SystemUpdate
+BuildDependencies
+PrepareToBuild
+Build
