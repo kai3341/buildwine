@@ -62,8 +62,15 @@ function SystemUpdateDebian {
 function PrepareToBuild {	#FIXME
 	mkdir -p "$BUILDPATH"
 	cd "$BUILDPATH"
-#	rm -rf ./*	#FIXME
-	wget "$ARCHIVELINK"
+	rm -rf ./*	#FIXME
+	while true
+	do
+		wget "$ARCHIVELINK" -O "$ARCHNAME"
+		if [ -a "$ARCHNAME" ]
+		then
+			break
+		fi
+	done
 	tar xvf "$ARCHNAME"
 	cd "$(dirname "$(find . -iname 'configure')")"
 }
